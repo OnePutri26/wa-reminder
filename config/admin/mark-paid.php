@@ -1,60 +1,43 @@
 <?php
-
-session_start();
-
-if (!isset($_SESSION['admin_id'])) {
-    header('Location: login.php');
-    exit;
-}
-
-require_once __DIR__ . '/../database.php';
 require_once __DIR__ . '/../helpers.php';
+requireLogin();
+require_once __DIR__ . '/../database.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    header('Location: reminder.php');
+    header('Location: unpaid.php');
     exit;
 }
-
 if (!csrf_valid()) {
     http_response_code(403);
     die('Token tidak valid. Kembali ke dashboard lalu coba lagi.');
 }
 
-$ids = [];
-foreach ((array)($_POST['id'] ?? []) as $id) {
-    $id = (int)$id;
-    if ($id > 0) {
-        $ids[] = $id;
-    }
-}
-$ids = array_values(array_unique($ids));
-
+$ids    = postIds('ids');
 $status = (string)($_POST['status'] ?? '');
 
+// kembali ke halaman asal (hanya halaman internal yang diizinkan)
+$back = (string)($_POST['back'] ?? '');
+if (!preg_match('#^(unpaid|payments)\.php(\?[A-Za-z0-9_=&%.\-\[\]]*)?$#', $back)) {
+    $back = 'unpaid.php';
+}
+
 if (!$ids || !in_array($status, ['belum_bayar', 'sudah_bayar'], true)) {
-    $_SESSION['flash'] = 'Permintaan tidak valid.';
-    header('Location: reminder.php');
+    flash('Permintaan tidak valid.', 'error');
+    header('Location: ' . $back);
     exit;
 }
 
-[$changed, $cancelled] = setPaymentStatus($conn, $ids, $status);
+[$changed, $cancelled] = setTagihanStatus($conn, $ids, $status);
 
 if ($status === 'sudah_bayar') {
-    $msg = $changed . ' customer ditandai sudah bayar.';
+    $msg = $changed . ' tagihan ditandai sudah bayar.';
     if ($cancelled > 0) {
         $msg .= ' ' . $cancelled . ' antrean reminder dibatalkan.';
     }
 } else {
-    $msg = $changed . ' customer dikembalikan ke belum bayar.';
+    $msg = $changed . ' tagihan dikembalikan ke belum bayar.';
 }
-
-$_SESSION['flash'] = $msg;
-
-// Kembali ke halaman reminder dengan filter yang sama (hanya path internal).
-$back = (string)($_POST['back'] ?? '');
-if (!preg_match('#^reminder\.php(\?[A-Za-z0-9_=&%.\-]*)?$#', $back)) {
-    $back = 'reminder.php';
-}
+flash($msg);
 
 header('Location: ' . $back);
 exit;

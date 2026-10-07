@@ -37,7 +37,7 @@ $page = min($page, $totalPages);
 $offset = ($page - 1) * $perPage;
 
 $st = $conn->prepare("
-    SELECT c.id, c.cid, c.nama, c.alamat, c.no_telepon, c.penagihan_cycle, c.updated_at,
+    SELECT c.id, c.cid, c.nama, c.alamat, c.no_telepon, c.penagihan_cycle, c.paket, c.updated_at,
            (SELECT COUNT(*) FROM tagihan t WHERE t.customer_id = c.id AND t.status_pembayaran = 'belum_bayar') AS belum_bayar
     FROM customers c $whereSql
     ORDER BY c.nama ASC
@@ -106,13 +106,14 @@ layout_start(
     <?php else: ?>
         <div class="reminder-table-wrapper">
             <table class="reminder-table">
-                <thead><tr><th>Customer</th><th>No Telepon</th><th>Cycle</th><th>Alamat</th><th>Tagihan Belum Bayar</th><th>Aksi</th></tr></thead>
+                <thead><tr><th>Customer</th><th>No Telepon</th><th>Cycle</th><th>Paket</th><th>Alamat</th><th>Tagihan Belum Bayar</th><th>Aksi</th></tr></thead>
                 <tbody>
                 <?php foreach ($rows as $r): ?>
                     <tr>
                         <td><div class="customer-name"><?= e($r['nama']) ?></div><div class="customer-cid"># <?= e($r['cid']) ?></div></td>
                         <td><div class="customer-phone"><?= $r['no_telepon'] ? e($r['no_telepon']) : '<span class="muted-text">belum ada</span>' ?></div></td>
                         <td><div class="customer-date"><?= e($r['penagihan_cycle'] ?: '-') ?></div></td>
+                        <td><div class="customer-date"><?= e($r['paket'] ?: '-') ?></div></td>
                         <td><div class="customer-date"><?= e($r['alamat'] ?: '-') ?></div></td>
                         <td>
                             <?php if ((int)$r['belum_bayar'] > 0): ?>

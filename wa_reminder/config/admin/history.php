@@ -35,7 +35,7 @@ $offset = ($page - 1) * $perPage;
 
 $st = $conn->prepare("
     SELECT rl.id, rl.status, rl.error_message, rl.sent_at, rl.created_at, rl.template_name,
-           c.cid, c.nama, c.no_telepon, t.jumlah_tagihan, t.tanggal_jatuh_tempo, t.status_pembayaran
+           c.cid, c.nama, c.no_telepon, t.no_invoice, t.jumlah_tagihan, t.tanggal_jatuh_tempo, t.status_pembayaran
     $fromSql $whereSql
     ORDER BY rl.id DESC
     LIMIT ? OFFSET ?
@@ -111,7 +111,7 @@ layout_start('Riwayat Reminder', 'history', 'REMINDER', 'Riwayat Reminder', 'Ant
                         <td>
                             <?php if ($r['jumlah_tagihan'] !== null): ?>
                                 <div class="customer-amount"><?= e(rupiah($r['jumlah_tagihan'])) ?></div>
-                                <div class="customer-date">Tempo <?= e(tanggal($r['tanggal_jatuh_tempo'])) ?> · <?= e(paymentLabel($r['status_pembayaran'])) ?></div>
+                                <div class="customer-date"><?= e($r['no_invoice']) ?> · Tempo <?= e(tanggal($r['tanggal_jatuh_tempo'])) ?> · <?= e(paymentLabel($r['status_pembayaran'])) ?></div>
                             <?php else: ?><span class="muted-text">-</span><?php endif; ?>
                         </td>
                         <td><span class="reminder-status <?= e(reminderStatusClass($r['status'])) ?>"><?= e(reminderStatusText($r['status'])) ?></span></td>

@@ -160,6 +160,13 @@ function render_import_page(array $c): void
                         </div>
                     <?php endif; ?>
 
+                    <?php if (!empty($r['skipped'])): ?>
+                        <div class="error-list warn">
+                            <strong>Dilewati</strong>
+                            <?php foreach ($r['skipped'] as $line): ?><div><?= e($line) ?></div><?php endforeach; ?>
+                        </div>
+                    <?php endif; ?>
+
                     <?php if (!empty($r['duplicates'])): ?>
                         <div class="error-list warn">
                             <strong>Data duplikat (dilewati)</strong>

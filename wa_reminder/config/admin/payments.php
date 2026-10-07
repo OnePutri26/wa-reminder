@@ -12,9 +12,9 @@ $perPage = 20;
 
 $where = ["t.status_pembayaran = 'sudah_bayar'"]; $params = []; $types = '';
 if ($search !== '') {
-    $where[] = '(c.cid LIKE ? OR c.nama LIKE ?)';
+    $where[] = '(c.cid LIKE ? OR c.nama LIKE ? OR t.no_invoice LIKE ?)';
     $k = '%' . $search . '%';
-    array_push($params, $k, $k); $types .= 'ss';
+    array_push($params, $k, $k, $k); $types .= 'sss';
 }
 if ($cycle !== '') { $where[] = 'c.penagihan_cycle = ?'; $params[] = $cycle; $types .= 's'; }
 if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $from)) { $where[] = 'DATE(t.paid_at) >= ?'; $params[] = $from; $types .= 's'; } else { $from = ''; }
@@ -34,7 +34,7 @@ $page = min($page, $totalPages);
 $offset = ($page - 1) * $perPage;
 
 $st = $conn->prepare("
-    SELECT t.id, t.jumlah_tagihan, t.tanggal_jatuh_tempo, t.paid_at, c.cid, c.nama, c.no_telepon, c.penagihan_cycle
+    SELECT t.id, t.no_invoice, t.jumlah_tagihan, t.tanggal_jatuh_tempo, t.paid_at, c.cid, c.nama, c.no_telepon, c.penagihan_cycle
     $fromSql $whereSql
     ORDER BY t.paid_at DESC, t.id DESC
     LIMIT ? OFFSET ?
@@ -87,7 +87,7 @@ layout_start('Riwayat Pembayaran', 'payments', 'TAGIHAN', 'Riwayat Pembayaran', 
                 <tbody>
                 <?php foreach ($rows as $r): ?>
                     <tr>
-                        <td><div class="customer-name"><?= e($r['nama']) ?></div><div class="customer-cid"># <?= e($r['cid']) ?><?= $r['penagihan_cycle'] ? ' · Cycle ' . e($r['penagihan_cycle']) : '' ?></div></td>
+                        <td><div class="customer-name"><?= e($r['nama']) ?></div><div class="customer-cid"># <?= e($r['cid']) ?><?= $r['penagihan_cycle'] ? ' · ' . e($r['penagihan_cycle']) : '' ?></div><div class="customer-cid">INV <?= e($r['no_invoice']) ?></div></td>
                         <td><div class="customer-phone"><?= e($r['no_telepon'] ?: '-') ?></div></td>
                         <td><div class="customer-amount"><?= e(rupiah($r['jumlah_tagihan'])) ?></div></td>
                         <td><div class="customer-date"><?= e(tanggal($r['tanggal_jatuh_tempo'])) ?></div></td>

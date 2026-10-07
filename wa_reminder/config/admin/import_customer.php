@@ -1,20 +1,22 @@
 <?php
 /**
  * Import Data Customer -> tabel customers (master data).
- * CID = identitas unik. CID sudah ada -> UPDATE, belum ada -> INSERT.
+ * Wajib: CID (REF_NO), Nama, No Telepon.
+ * Opsional: Penagihan Cycle, Alamat, Email, Paket.
+ * CID sudah ada -> UPDATE, belum ada -> INSERT.
  */
 require_once __DIR__ . '/../helpers.php';
 requireLogin();
 require_once __DIR__ . '/../database.php';
 require_once __DIR__ . '/import_page.php';
 
-/** Nilai sel -> teks CID bersih (angka Excel tidak jadi 1.0E+5). */
+/** Nilai sel -> teks bersih (angka Excel tidak jadi 1.0E+5). */
 function cellText($v): string
 {
     if (is_float($v) || is_int($v)) {
         $v = sprintf('%.0f', $v);
     }
-    return trim((string)$v);
+    return trim(preg_replace('/\s+/', ' ', (string)$v));
 }
 
 $result  = null;
@@ -29,15 +31,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         [$headers, $rows] = readUploadedSheet($_FILES['import_file'] ?? []);
 
         $col = [
-            'cid'   => findColumn($headers, ['CID', 'Customer ID', 'ID Customer', 'Kode Customer', 'Kode Pelanggan', 'No Ref']),
-            'nama'  => findColumn($headers, ['Nama', 'Name', 'Nama Customer', 'Nama Pelanggan']),
-            'phone' => findColumn($headers, ['No Telepon', 'No Telp', 'Telepon', 'No HP', 'WhatsApp', 'Phone']),
-            'cycle' => findColumn($headers, ['Penagihan Cycle', 'Cycle', 'Siklus', 'Siklus Penagihan']),
-            'alamat'=> findColumn($headers, ['Alamat', 'Address']), // opsional
+            'cid'    => findColumn($headers, ['CID', 'REF_NO', 'Ref No', 'Ref No Customer', 'REF_NO_CUSTOMER', 'No Ref', 'Customer ID', 'ID Customer', 'Kode Customer', 'Kode Pelanggan']),
+            'nama'   => findColumn($headers, ['Nama', 'Name', 'Nama Customer', 'Nama Pelanggan']),
+            'phone'  => findColumn($headers, ['No Telepon', 'NO_TELP', 'No Telp', 'Telepon', 'No HP', 'HP', 'WhatsApp', 'Phone']),
+            // opsional
+            'cycle'  => findColumn($headers, ['Penagihan Cycle', 'PENAGIHAN_CYCLE', 'Cycle', 'Siklus']),
+            'alamat' => findColumn($headers, ['Alamat', 'Alamat Lengkap', 'Address']),
+            'email'  => findColumn($headers, ['Email', 'E-mail']),
+            'paket'  => findColumn($headers, ['Paket', 'Package']),
         ];
 
         $missing = [];
-        foreach (['cid' => 'CID', 'nama' => 'Nama', 'phone' => 'No Telepon', 'cycle' => 'Penagihan Cycle'] as $k => $label) {
+        foreach (['cid' => 'CID / REF_NO', 'nama' => 'Nama', 'phone' => 'No Telepon / NO_TELP'] as $k => $label) {
             if ($col[$k] === null) {
                 $missing[] = $label;
             }
@@ -46,38 +51,66 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             throw new RuntimeException('Kolom wajib tidak ditemukan: ' . implode(', ', $missing) . '.');
         }
 
+        // teks opsional dari kolom (null kalau kolom tidak ada / sel kosong)
+        $opt = function (array $row, string $key, int $max = 0) use ($col): ?string {
+            if ($col[$key] === null) {
+                return null;
+            }
+            $v = cellText($row[$col[$key]] ?? '');
+            if ($v === '') {
+                return null;
+            }
+            return $max > 0 ? mb_substr($v, 0, $max) : $v;
+        };
+
         $total = $new = $updated = $failed = $dups = 0;
         $errors = $duplicates = [];
         $seen = [];
 
         $find   = $conn->prepare('SELECT id FROM customers WHERE cid = ? LIMIT 1');
-        $insert = $conn->prepare('INSERT INTO customers (cid, nama, alamat, no_telepon, penagihan_cycle) VALUES (?, ?, ?, ?, ?)');
-        $update = $conn->prepare('UPDATE customers SET nama = ?, no_telepon = ?, penagihan_cycle = ? WHERE id = ?');
-        $updateAlamat = $conn->prepare('UPDATE customers SET alamat = ? WHERE id = ?');
+        $insert = $conn->prepare('INSERT INTO customers (cid, nama, alamat, no_telepon, penagihan_cycle, email, paket) VALUES (?, ?, ?, ?, ?, ?, ?)');
+        // kolom opsional yang kosong di file TIDAK menimpa data lama
+        $update = $conn->prepare('UPDATE customers SET nama = ?, no_telepon = ?,
+                                  penagihan_cycle = COALESCE(?, penagihan_cycle),
+                                  alamat = COALESCE(?, alamat),
+                                  email = COALESCE(?, email),
+                                  paket = COALESCE(?, paket)
+                                  WHERE id = ?');
 
         $conn->begin_transaction();
 
         foreach ($rows as $i => $row) {
-            $line  = $i + 2; // baris Excel (header = 1)
+            $line = $i + 2; // nomor baris Excel (header = 1)
             $total++;
 
             $cid   = cellText($row[$col['cid']] ?? '');
-            $nama  = trim((string)($row[$col['nama']] ?? ''));
+            $nama  = cellText($row[$col['nama']] ?? '');
             $phone = normalizePhone($row[$col['phone']] ?? '');
-            $cycle = normalizeCycle($row[$col['cycle']] ?? '');
-            $alamat = $col['alamat'] !== null ? trim((string)($row[$col['alamat']] ?? '')) : null;
+
+            $cycle  = $col['cycle'] !== null ? normalizeCycle($row[$col['cycle']] ?? '') : null;
+            $alamat = $opt($row, 'alamat');
+            $paket  = $opt($row, 'paket', 50);
+            $email  = $opt($row, 'email', 150);
+            if ($email !== null) {
+                $email = strtolower($email);
+                if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                    $email = null; // email tidak valid diabaikan, bukan error
+                }
+            }
 
             $err = null;
             if ($cid === '') {
-                $err = 'CID kosong';
+                $err = 'CID / REF_NO kosong';
             } elseif (!preg_match('/^[A-Za-z0-9._\-\/]{1,50}$/', $cid)) {
                 $err = 'CID tidak valid (hanya huruf, angka, titik, strip, garis miring; maks 50 karakter)';
             } elseif ($nama === '') {
                 $err = 'Nama customer kosong';
             } elseif (mb_strlen($nama) > 150) {
                 $err = 'Nama terlalu panjang (maks 150 karakter)';
-            } elseif ($phone === '' || strlen($phone) < 9 || strlen($phone) > 14) {
-                $err = 'No Telepon kosong atau tidak valid';
+            } elseif ($phone === '') {
+                $err = 'No Telepon kosong';
+            } elseif (strlen($phone) < 9 || strlen($phone) > 14) {
+                $err = 'No Telepon tidak valid (' . $phone . ')';
             }
 
             if ($err !== null) {
@@ -104,16 +137,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if ($existing) {
                 $id = (int)$existing['id'];
-                $update->bind_param('sssi', $nama, $phone, $cycle, $id);
+                $update->bind_param('ssssssi', $nama, $phone, $cycle, $alamat, $email, $paket, $id);
                 $update->execute();
-                if ($alamat !== null && $alamat !== '') {
-                    $updateAlamat->bind_param('si', $alamat, $id);
-                    $updateAlamat->execute();
-                }
                 $updated++;
             } else {
-                $alamatVal = ($alamat !== null && $alamat !== '') ? $alamat : null;
-                $insert->bind_param('sssss', $cid, $nama, $alamatVal, $phone, $cycle);
+                $insert->bind_param('sssssss', $cid, $nama, $alamat, $phone, $cycle, $email, $paket);
                 $insert->execute();
                 $new++;
             }
@@ -146,19 +174,19 @@ render_import_page([
     'eyebrow'      => 'CUSTOMER IMPORT',
     'h1a'          => 'Import',
     'h1b'          => 'Data Customer.',
-    'intro'        => 'Masukkan master data customer dari file Excel atau CSV. CID baru akan ditambahkan, sedangkan CID yang sudah ada akan diperbarui (tidak dibuat ganda). Data ini dipakai untuk semua tagihan dan reminder.',
+    'intro'        => 'Masukkan master data customer dari file Excel atau CSV. CID baru ditambahkan, CID yang sudah ada diperbarui (tidak dibuat ganda). Data ini dipakai untuk semua tagihan dan reminder.',
     'panelTitle'   => 'Upload file customer',
-    'panelDesc'    => 'CID, Nama, No Telepon, dan Penagihan Cycle wajib ada di header. Kolom Alamat boleh ditambahkan (opsional).',
+    'panelDesc'    => 'Wajib: REF_NO (CID), NAMA, dan NO_TELP. Kolom lain di file (PENAGIHAN_CYCLE, ALAMAT, EMAIL, PAKET) dipakai bila ada; sisanya diabaikan.',
     'dropTitle'    => 'Pilih file customer',
     'submitText'   => 'Import Customer',
     'template'     => 'template_customer.php',
-    'requirements' => ['CID unik', 'Nama wajib', 'No Telepon otomatis 08xxx', 'Penagihan Cycle'],
-    'formatCode'   => 'CID | Nama | No Telepon | Penagihan Cycle',
-    'exampleCode'  => 'CUST001 | Budi Santoso | 081234567890 | 10',
+    'requirements' => ['CID / REF_NO wajib & unik', 'Nama wajib', 'No Telepon wajib (jadi 08xxx)', 'Cycle, alamat, email, paket opsional'],
+    'formatCode'   => 'REF_NO | NAMA | NO_TELP | PENAGIHAN_CYCLE | ALAMAT | EMAIL | PAKET',
+    'exampleCode'  => 'CG000010626 | NICHOLAS THAN | 081188095623 | Cycle 1 | Apt City Garden … | … | P0291',
     'rules'        => [
-        ['CID', 'ID unik customer. Jika sudah ada, data customer diperbarui.'],
-        ['No', '628123456789, +62 812-3456-789, dan 8123456789 otomatis menjadi 08123456789.'],
-        ['Cycle', 'Siklus/tanggal penagihan, disimpan apa adanya (10, 15, 20, ...).'],
+        ['CID', 'REF_NO / CID = identitas unik. Jika sudah ada, data customer diperbarui (bukan dibuat ganda).'],
+        ['Telp', '+62 812-9151-3755, 6281291513755, dan 81291513755 otomatis menjadi 081291513755.'],
+        ['Kosong', 'Kolom opsional yang kosong di file tidak menghapus data lama di database.'],
         ['Ganda', 'CID yang muncul dua kali dalam satu file: baris pertama dipakai, sisanya dihitung duplikat.'],
     ],
     'result'  => $result,

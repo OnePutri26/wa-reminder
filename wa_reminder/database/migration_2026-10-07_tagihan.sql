@@ -7,17 +7,27 @@
 ALTER TABLE `customers`
   ADD COLUMN IF NOT EXISTS `alamat` text DEFAULT NULL AFTER `nama`,
   ADD COLUMN IF NOT EXISTS `penagihan_cycle` varchar(30) DEFAULT NULL AFTER `no_telepon`,
+  ADD COLUMN IF NOT EXISTS `email` varchar(150) DEFAULT NULL AFTER `penagihan_cycle`,
+  ADD COLUMN IF NOT EXISTS `paket` varchar(50) DEFAULT NULL AFTER `email`,
   MODIFY `no_telepon` varchar(30) DEFAULT NULL;
 
 -- 2. Nomor telepon ke format lokal: 628123456789 -> 08123456789
 UPDATE `customers` SET `no_telepon` = CONCAT('0', SUBSTRING(`no_telepon`, 3))
 WHERE `no_telepon` LIKE '62%';
 
--- 3. Tabel tagihan.
+-- 3. Tabel tagihan (satu baris per invoice).
 CREATE TABLE IF NOT EXISTS `tagihan` (
   `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT,
   `customer_id` int(10) UNSIGNED NOT NULL,
   `cid` varchar(50) NOT NULL,
+  `no_invoice` varchar(80) NOT NULL,
+  `no_faktur` varchar(50) DEFAULT NULL,
+  `tanggal_invoice` date DEFAULT NULL,
+  `periode_dari` date DEFAULT NULL,
+  `periode_sampai` date DEFAULT NULL,
+  `subtotal` decimal(15,2) NOT NULL DEFAULT 0.00,
+  `ppn` decimal(15,2) NOT NULL DEFAULT 0.00,
+  `jumlah_dibayar` decimal(15,2) NOT NULL DEFAULT 0.00,
   `jumlah_tagihan` decimal(15,2) NOT NULL DEFAULT 0.00,
   `tanggal_jatuh_tempo` date DEFAULT NULL,
   `status_pembayaran` enum('belum_bayar','sudah_bayar') NOT NULL DEFAULT 'belum_bayar',
@@ -25,7 +35,8 @@ CREATE TABLE IF NOT EXISTS `tagihan` (
   `created_at` timestamp NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_customer_jatuh_tempo` (`customer_id`,`tanggal_jatuh_tempo`),
+  UNIQUE KEY `uk_no_invoice` (`no_invoice`),
+  KEY `idx_customer` (`customer_id`),
   KEY `idx_cid` (`cid`),
   KEY `idx_status` (`status_pembayaran`),
   KEY `idx_jatuh_tempo` (`tanggal_jatuh_tempo`),
@@ -33,9 +44,10 @@ CREATE TABLE IF NOT EXISTS `tagihan` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- 4. Pindahkan data tagihan lama (status, amount, due_date) dari customers.
+--    Data lama tidak punya nomor invoice, jadi dibuatkan nomor 'MIG-<id customer>-<jatuh tempo>'.
 INSERT IGNORE INTO `tagihan`
-  (`customer_id`, `cid`, `jumlah_tagihan`, `tanggal_jatuh_tempo`, `status_pembayaran`, `paid_at`)
-SELECT `id`, `cid`, `amount`, `due_date`, `status_payment`,
+  (`customer_id`, `cid`, `no_invoice`, `subtotal`, `jumlah_tagihan`, `tanggal_jatuh_tempo`, `status_pembayaran`, `paid_at`)
+SELECT `id`, `cid`, CONCAT('MIG-', `id`, '-', `due_date`), `amount`, `amount`, `due_date`, `status_payment`,
        IF(`status_payment` = 'sudah_bayar', `updated_at`, NULL)
 FROM `customers`
 WHERE `due_date` IS NOT NULL;

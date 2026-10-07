@@ -18,7 +18,9 @@ CREATE TABLE `customers` (
   `nama` varchar(150) NOT NULL,
   `alamat` text DEFAULT NULL,
   `no_telepon` varchar(30) DEFAULT NULL,
-  `penagihan_cycle` varchar(30) DEFAULT NULL,
+  `penagihan_cycle` varchar(30) DEFAULT NULL,   -- mis. 'Cycle 1'
+  `email` varchar(150) DEFAULT NULL,
+  `paket` varchar(50) DEFAULT NULL,             -- kode paket, mis. 'P0291'
   `created_at` timestamp NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   PRIMARY KEY (`id`),
@@ -26,11 +28,21 @@ CREATE TABLE `customers` (
   KEY `idx_no_telepon` (`no_telepon`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
--- TAGIHAN. Tidak menyimpan nomor telepon: ambil lewat customer_id -> customers.
+-- TAGIHAN = satu baris per INVOICE. Tidak menyimpan nomor telepon / nama:
+-- diambil lewat customer_id -> customers.
+-- jumlah_tagihan = SISA yang harus dibayar (subtotal + ppn - jumlah_dibayar).
 CREATE TABLE `tagihan` (
   `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT,
   `customer_id` int(10) UNSIGNED NOT NULL,
   `cid` varchar(50) NOT NULL,
+  `no_invoice` varchar(80) NOT NULL,
+  `no_faktur` varchar(50) DEFAULT NULL,
+  `tanggal_invoice` date DEFAULT NULL,
+  `periode_dari` date DEFAULT NULL,
+  `periode_sampai` date DEFAULT NULL,
+  `subtotal` decimal(15,2) NOT NULL DEFAULT 0.00,
+  `ppn` decimal(15,2) NOT NULL DEFAULT 0.00,
+  `jumlah_dibayar` decimal(15,2) NOT NULL DEFAULT 0.00,
   `jumlah_tagihan` decimal(15,2) NOT NULL DEFAULT 0.00,
   `tanggal_jatuh_tempo` date DEFAULT NULL,
   `status_pembayaran` enum('belum_bayar','sudah_bayar') NOT NULL DEFAULT 'belum_bayar',
@@ -38,7 +50,8 @@ CREATE TABLE `tagihan` (
   `created_at` timestamp NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_customer_jatuh_tempo` (`customer_id`,`tanggal_jatuh_tempo`),
+  UNIQUE KEY `uk_no_invoice` (`no_invoice`),
+  KEY `idx_customer` (`customer_id`),
   KEY `idx_cid` (`cid`),
   KEY `idx_status` (`status_pembayaran`),
   KEY `idx_jatuh_tempo` (`tanggal_jatuh_tempo`),

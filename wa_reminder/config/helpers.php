@@ -193,20 +193,21 @@ function toWhatsappNumber(string $phone): string
 }
 
 /**
- * Penagihan Cycle: disimpan apa adanya (10, 15, 20, c1, ...).
- * Awalan "Cycle"/"Siklus" dibuang, angka desimal Excel (15.0) dirapikan.
+ * Penagihan Cycle: teks dirapikan. "Cycle 1", "cycle1", "C1", "siklus 1" -> "Cycle 1".
+ * Angka biasa (10, 15, 20) disimpan apa adanya. Kosong -> null.
  */
 function normalizeCycle($value): ?string
 {
     if (is_float($value) && floor($value) == $value) {
         $value = (int)$value;
     }
-    $v = strtolower(trim((string)$value));
-    $v = preg_replace('/^(cycle|siklus)\s*[-:]?\s*/', '', $v);
-    $v = trim($v);
+    $v = trim(preg_replace('/\s+/', ' ', (string)$value));
 
     if ($v === '' || strlen($v) > 30) {
         return null;
+    }
+    if (preg_match('/^(?:cycle|siklus|c)\s*[-:]?\s*(\d+)$/i', $v, $m)) {
+        return 'Cycle ' . (int)$m[1];
     }
     return $v;
 }
@@ -444,7 +445,7 @@ function getSendableReminders(mysqli $conn, int $limit = 50): array
 
     $stmt = $conn->prepare("
         SELECT rl.id AS log_id, rl.template_name,
-               t.id AS tagihan_id, t.jumlah_tagihan, t.tanggal_jatuh_tempo,
+               t.id AS tagihan_id, t.no_invoice, t.jumlah_tagihan, t.tanggal_jatuh_tempo,
                c.id AS customer_id, c.cid, c.nama, c.no_telepon, c.alamat
         FROM reminder_logs rl
         JOIN tagihan t   ON t.id = rl.tagihan_id
